@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: ai-knowledgebase-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        postgresql+asyncpg://neondb_owner:npg_f6LrdTGxta3J@ep-cold-thunder-at6npvvi-pooler.c-9.us-east-1.aws.neon.tech/neondb?ssl=require
+      - key: MONGO_URL
+        sync: false
+      - key: MONGO_DB_NAME
+        value: ai_knowledgebase_mongo
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+    healthCheckPath: /health
+
+  - type: worker
+    name: ai-knowledgebase-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    dockerCommand: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=1
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql+asyncpg://neondb_owner:npg_f6LrdTGxta3J@ep-cold-thunder-at6npvvi-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require
+      - key: MONGO_URL
+        sync: false
+      - key: MONGO_DB_NAME
+        value: ai_knowledgebase_mongo
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
