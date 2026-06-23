@@ -2,6 +2,13 @@
 
 > Intelligent document Q&A API built with FastAPI, PostgreSQL, MongoDB, Redis, and Claude AI
 
+Live URLs:
+
+API: https://ai-knowledgebase-api-m9ry.onrender.com
+Docs: https://ai-knowledgebase-api-m9ry.onrender.com/docs
+Health: https://ai-knowledgebase-api-m9ry.onrender.com/health
+GitHub: https://github.com/andugetachew/ai-knowledgebase-api
+
 ## Features
 - JWT authentication with workspace isolation
 - Document upload with semantic chunking and embedding
