@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db.mongodb import get_mongo_db
 from app.db.postgres import get_db
+from app.db.redis import get_redis
 from app.models.sql.document import Document
 from app.models.sql.user import User
 from app.models.sql.workspace import Workspace
@@ -31,6 +33,14 @@ async def get_workspace_stats(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
+    # check cache first
+    redis = get_redis()
+    cache_key = f"stats:{workspace_id}"
+    if redis:
+        cached = await redis.get(cache_key)
+        if cached:
+            return WorkspaceStats(**json.loads(cached))
+
     # total documents from postgres
     doc_result = await db.execute(
         select(func.count()).where(Document.workspace_id == uuid.UUID(workspace_id))
@@ -50,13 +60,19 @@ async def get_workspace_stats(
     token_result = await mongo_db["chat_messages"].aggregate(pipeline).to_list(1)
     total_tokens = token_result[0]["total"] if token_result else 0
 
-    return WorkspaceStats(
+    stats = WorkspaceStats(
         workspace_id=workspace_id,
         total_documents=total_documents,
         total_chunks=total_chunks,
         total_queries=total_queries,
         total_tokens_used=total_tokens,
     )
+
+    # store in cache
+    if redis:
+        await redis.setex(cache_key, 60 * 5, stats.model_dump_json())
+
+    return stats
 
 
 @router.get("/{workspace_id}/history", response_model=list[QueryLog])
