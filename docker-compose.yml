@@ -1,0 +1,93 @@
+services:
+
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: ai_knowledgebase_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override just the hostnames that differ inside the Docker network.
+      # Everything else (passwords, db names, SECRET_KEY, etc.) comes from
+      # .env above unchanged — these three lines are the only difference
+      # between "running locally" and "running in this compose stack".
+      DATABASE_URL: postgresql+asyncpg://postgres:perfectionist@postgres:5432/ai_knowledgebase_db
+      MONGO_URL: mongodb://mongoadmin:mongopassword@mongo:27017
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_knowledgebase_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: perfectionist
+      POSTGRES_DB: ai_knowledgebase_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    container_name: ai_knowledgebase_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongoadmin
+      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_knowledgebase_redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+
+networks:
+  app_network:
+    driver: bridge

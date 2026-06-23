@@ -1,0 +1,7 @@
+venv/ 
+.env 
+.env.docker 
+__pycache__/ 
+*.pyc 
+.pytest_cache/ 
+installed.txt 
