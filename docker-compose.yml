@@ -8,15 +8,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
-    environment:
-      # Override just the hostnames that differ inside the Docker network.
-      # Everything else (passwords, db names, SECRET_KEY, etc.) comes from
-      # .env above unchanged — these three lines are the only difference
-      # between "running locally" and "running in this compose stack".
-      DATABASE_URL: postgresql+asyncpg://postgres:perfectionist@postgres:5432/ai_knowledgebase_db
-      MONGO_URL: mongodb://mongoadmin:mongopassword@mongo:27017
-      REDIS_URL: redis://redis:6379/0
+      - .env.docker
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +25,25 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    container_name: ai_knowledgebase_worker
+    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - .env.docker
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - app_network
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
@@ -60,6 +71,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: mongopassword
     volumes:
       - mongo_data:/data/db
+    ports:
+    - "27017:27017"   
     networks:
       - app_network
     restart: unless-stopped

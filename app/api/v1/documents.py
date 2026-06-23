@@ -77,6 +77,14 @@ async def upload_document(
         document.chunk_count = len(chunks)
         document.status = DocumentStatus.ready
         await db.commit()
+        content_text = contents.decode("utf-8", errors="ignore")
+
+        from app.workers.tasks import process_document
+        process_document.delay(
+            document_id=str(document.id),
+            workspace_id=str(workspace_id),
+            content=content_text,
+        )
         await db.refresh(document)
 
     return document
