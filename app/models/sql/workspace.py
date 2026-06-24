@@ -1,10 +1,8 @@
 import uuid
 from datetime import datetime, UTC
-
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.postgres import Base
 
 
@@ -19,3 +17,4 @@ class Workspace(Base):
 
     owner = relationship("User", back_populates="workspaces")
     documents = relationship("Document", back_populates="workspace")
+    members = relationship("WorkspaceMember", back_populates="workspace")

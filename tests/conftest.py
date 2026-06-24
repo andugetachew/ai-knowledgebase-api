@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 from app.db.postgres import Base, get_db
 from app.db.mongodb import connect_to_mongo, close_mongo_connection
+from app.db.redis import connect_to_redis, close_redis_connection
 from app.main import app
 
 TEST_DATABASE_URL = settings.database_url.rsplit("/", 1)[0] + "/ai_knowledgebase_test_db"
@@ -42,6 +43,18 @@ async def setup_mongo():
     await connect_to_mongo()
     yield
     await close_mongo_connection()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def setup_redis():
+    # Same loop-affinity reasoning as setup_mongo above: redis.asyncio's
+    # connection pool is bound to the event loop active when it's created.
+    # Without this fixture, redis_client in app/db/redis.py stays None for
+    # the whole test session because lifespan() never runs under
+    # ASGITransport, so any endpoint calling get_redis() would get None.
+    await connect_to_redis()
+    yield
+    await close_redis_connection()
 
 
 @pytest_asyncio.fixture

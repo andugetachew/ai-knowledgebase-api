@@ -8,6 +8,7 @@ from app.api.v1.documents import router as documents_router
 from app.api.v1.search import router as search_router
 from app.api.v1.usage import router as usage_router
 from app.api.v1.websocket import router as ws_router
+from app.api.v1.analytics import router as analytics_router
 from app.core.config import settings
 from app.db.mongodb import close_mongo_connection, connect_to_mongo, check_mongo_connection
 from app.db.postgres import engine
@@ -32,7 +33,9 @@ app.include_router(chat_router)
 app.include_router(search_router)
 app.include_router(usage_router)
 app.include_router(ws_router)
-
+app.include_router(analytics_router)
+from app.api.v1.workspace import router as workspace_router
+app.include_router(workspace_router)
 
 @app.get("/")
 async def root():

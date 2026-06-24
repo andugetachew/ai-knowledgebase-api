@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, UTC
+from typing import ClassVar
 
 from sqlalchemy import Boolean, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
@@ -19,3 +20,10 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC))
 
     workspaces = relationship("Workspace", back_populates="owner")
+    workspace_memberships = relationship(
+        "WorkspaceMember",
+        foreign_keys="WorkspaceMember.user_id",
+        back_populates="user",
+    )
+
+    workspace_id: ClassVar[uuid.UUID | None] = None
