@@ -1,17 +1,17 @@
 from pydantic import BaseModel
 
-from pydantic import BaseModel
-
 
 class ChatRequest(BaseModel):
     question: str
     workspace_id: str
+    conversation_id: str | None = None  # None = new conversation
 
 
 class ChatResponse(BaseModel):
     answer: str
     sources: list[str] = []
     tokens_used: int = 0
+    conversation_id: str
 
 
 class SearchRequest(BaseModel):
@@ -32,15 +32,6 @@ class SearchResponse(BaseModel):
     results: list[ChunkResult]
     total: int
 
-class ChatRequest(BaseModel):
-    question: str
-    workspace_id: str
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list[str] = []
-    tokens_used: int = 0
 
 class WorkspaceStats(BaseModel):
     workspace_id: str
@@ -56,3 +47,4 @@ class QueryLog(BaseModel):
     sources: list[str]
     tokens_used: int
     created_at: str
+    conversation_id: str | None = None

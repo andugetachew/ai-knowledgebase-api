@@ -2,8 +2,11 @@ import httpx
 from app.core.config import settings
 
 
-async def generate_answer(question: str, context_chunks: list[dict]) -> dict:
-    """Send question + context to Claude API and return answer."""
+async def generate_answer(
+    question: str,
+    context_chunks: list[dict],
+    conversation_history: list[dict] | None = None,
+) -> dict:
 
     if not context_chunks:
         return {
@@ -17,14 +20,22 @@ async def generate_answer(question: str, context_chunks: list[dict]) -> dict:
         for chunk in context_chunks
     ])
 
-    prompt = f"""You are a helpful assistant that answers questions based on the provided documents.
+    system_prompt = f"""You are a helpful assistant that answers questions based on the provided documents.
 
-Context:
+Context from documents:
 {context}
 
-Question: {question}
+Answer based only on the context above. If the answer is not in the context, say so clearly.
+If the user asks a follow-up question, use the conversation history to understand what they are referring to."""
 
-Answer based only on the context above. If the answer is not in the context, say so clearly."""
+    # build messages with history
+    messages = []
+    if conversation_history:
+        for msg in conversation_history[-6:]:  # last 6 messages = 3 turns
+            messages.append({"role": "user", "content": msg["question"]})
+            messages.append({"role": "assistant", "content": msg["answer"]})
+
+    messages.append({"role": "user", "content": question})
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
@@ -37,7 +48,8 @@ Answer based only on the context above. If the answer is not in the context, say
             json={
                 "model": "claude-haiku-4-5-20251001",
                 "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
+                "system": system_prompt,
+                "messages": messages,
             },
         )
         response.raise_for_status()

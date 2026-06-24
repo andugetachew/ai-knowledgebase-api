@@ -85,6 +85,8 @@ async def test_chat_response_schema(client):
     assert isinstance(data["answer"], str)
     assert isinstance(data["sources"], list)
     assert isinstance(data["tokens_used"], int)
+    assert "conversation_id" in data
+    assert isinstance(data["conversation_id"], str)
 
 
 async def test_chat_without_token_fails(client):
