@@ -1,4 +1,5 @@
 import uuid
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,15 +10,25 @@ from app.models.sql.document import Document, DocumentStatus
 from app.models.sql.user import User
 from app.models.sql.workspace import Workspace
 from app.schemas.document import DocumentOut, DocumentList
-from app.services.chunking_service import chunk_text
-from app.services.embedding_service import generate_embeddings_batch
-from app.db.mongodb import get_mongo_db
-
+from app.services.document_processor import extract_text, extract_text_from_url
+from app.workers.tasks import process_document
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
-ALLOWED_TYPES = {"application/pdf", "text/plain", "text/markdown"}
-MAX_FILE_SIZE = 10 * 1024 * 1024
+ALLOWED_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+class URLIngestRequest(BaseModel):
+    url: str
+    workspace_id: uuid.UUID
 
 
 @router.post("/", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -44,6 +55,11 @@ async def upload_document(
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
 
+    try:
+        text = extract_text(contents, file.content_type)
+    except Exception:
+        text = contents.decode("utf-8", errors="ignore")
+
     document = Document(
         workspace_id=workspace_id,
         filename=file.filename,
@@ -55,37 +71,51 @@ async def upload_document(
     await db.commit()
     await db.refresh(document)
 
-    content_text = contents.decode("utf-8", errors="ignore")
-    chunks = chunk_text(content_text)
+    process_document.delay(
+        document_id=str(document.id),
+        workspace_id=str(workspace_id),
+        content=text,
+    )
 
-    if chunks:
-        embeddings = generate_embeddings_batch(chunks)
-        mongo_db = get_mongo_db()
+    return document
 
-        chunk_docs = [
-            {
-                "document_id": str(document.id),
-                "workspace_id": str(workspace_id),
-                "content": chunk,
-                "chunk_index": i,
-                "embedding": embeddings[i],
-            }
-            for i, chunk in enumerate(chunks)
-        ]
-        await mongo_db["chunks"].insert_many(chunk_docs)
 
-        document.chunk_count = len(chunks)
-        document.status = DocumentStatus.ready
-        await db.commit()
-        content_text = contents.decode("utf-8", errors="ignore")
-
-        from app.workers.tasks import process_document
-        process_document.delay(
-            document_id=str(document.id),
-            workspace_id=str(workspace_id),
-            content=content_text,
+@router.post("/ingest-url", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
+async def ingest_url(
+    payload: URLIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == payload.workspace_id,
+            Workspace.owner_id == current_user.id,
         )
-        await db.refresh(document)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    try:
+        text = await extract_text_from_url(payload.url)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch URL: {str(e)}")
+
+    document = Document(
+        workspace_id=payload.workspace_id,
+        filename=payload.url,
+        file_type="text/html",
+        file_size=len(text.encode()),
+        status=DocumentStatus.pending,
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+
+    process_document.delay(
+        document_id=str(document.id),
+        workspace_id=str(payload.workspace_id),
+        content=text,
+    )
 
     return document
 
