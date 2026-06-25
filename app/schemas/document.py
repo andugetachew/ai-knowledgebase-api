@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
-from app.models.sql.document import DocumentStatus
 
 
 class DocumentOut(BaseModel):
@@ -10,10 +9,10 @@ class DocumentOut(BaseModel):
     filename: str
     file_type: str
     file_size: int
-    status: DocumentStatus
-    chunk_count: int
+    status: str
+    version: int = 1
+    parent_document_id: uuid.UUID | None = None
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
 
 
