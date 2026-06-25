@@ -36,7 +36,8 @@ app.include_router(ws_router)
 app.include_router(analytics_router)
 from app.api.v1.workspace import router as workspace_router
 app.include_router(workspace_router)
-
+from app.api.v1.subscription import router as subscription_router
+app.include_router(subscription_router)
 @app.get("/")
 async def root():
     return {"message": f"{settings.app_name} is running", "environment": settings.environment}

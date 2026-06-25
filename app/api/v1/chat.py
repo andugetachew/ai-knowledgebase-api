@@ -3,6 +3,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.db.postgres import get_db
@@ -13,6 +14,7 @@ from app.models.nosql.chat_message import ChatMessage
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.retrieval_service import retrieve_relevant_chunks
 from app.services.llm_service import generate_answer
+from app.services.rate_limiter import check_rate_limit
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -24,48 +26,50 @@ async def chat(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Workspace).where(
+        select(Workspace)
+        .where(
             Workspace.id == uuid.UUID(payload.workspace_id),
             Workspace.owner_id == current_user.id,
         )
+        .options(selectinload(Workspace.subscription))
     )
     workspace = result.scalar_one_or_none()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    mongo_db = get_mongo_db()
+    # check rate limit
+    plan = workspace.subscription.plan if workspace.subscription else "free"
+    rate = await check_rate_limit(payload.workspace_id, plan)
+    if not rate["allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Daily query limit reached ({rate['limit']} queries/day). Upgrade to Pro for unlimited queries.",
+        )
 
-    # determine conversation_id
+    mongo_db = get_mongo_db()
     conversation_id = payload.conversation_id or str(ObjectId())
 
-    # fetch conversation history if continuing
     conversation_history = []
     if payload.conversation_id:
         cursor = mongo_db["chat_messages"].find(
-            {
-                "conversation_id": payload.conversation_id,
-                "workspace_id": payload.workspace_id,
-            },
+            {"conversation_id": payload.conversation_id, "workspace_id": payload.workspace_id},
             sort=[("created_at", 1)],
             limit=6,
         )
         conversation_history = await cursor.to_list(length=6)
 
-    # retrieve relevant chunks
     chunks = await retrieve_relevant_chunks(
         query=payload.question,
         workspace_id=payload.workspace_id,
         db=mongo_db,
     )
 
-    # generate answer with history
     result_data = await generate_answer(
         question=payload.question,
         context_chunks=chunks,
         conversation_history=conversation_history,
     )
 
-    # save message
     message = ChatMessage(
         conversation_id=conversation_id,
         workspace_id=payload.workspace_id,
@@ -101,7 +105,6 @@ async def list_conversations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     mongo_db = get_mongo_db()
-
     pipeline = [
         {"$match": {"workspace_id": workspace_id}},
         {"$sort": {"created_at": -1}},
@@ -114,7 +117,6 @@ async def list_conversations(
         {"$sort": {"last_message_at": -1}},
         {"$limit": 20},
     ]
-
     cursor = mongo_db["chat_messages"].aggregate(pipeline)
     conversations = await cursor.to_list(length=20)
 

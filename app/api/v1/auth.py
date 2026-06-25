@@ -1,5 +1,4 @@
 import secrets
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +7,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db.postgres import get_db
 from app.models.sql.user import User
 from app.models.sql.workspace import Workspace
+from app.models.sql.subscription import Subscription, PlanType
 from app.schemas.auth import Token, UserLogin, UserRegister
 from app.schemas.user import UserOut
 
@@ -34,19 +34,20 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
         api_key=secrets.token_urlsafe(32),
     )
     db.add(workspace)
+    await db.flush()
+
+    subscription = Subscription(
+        workspace_id=workspace.id,
+        plan=PlanType.free,
+        queries_per_day=10,
+    )
+    db.add(subscription)
 
     await db.commit()
     await db.refresh(user)
     await db.refresh(workspace)
-
-    return UserOut(
-        id=user.id,
-        email=user.email,
-        full_name=user.full_name,
-        is_active=user.is_active,
-        created_at=user.created_at,
-        workspace_id=workspace.id,
-    )
+    user.workspace_id = workspace.id
+    return user
 
 
 @router.post("/login", response_model=Token)

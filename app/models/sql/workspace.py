@@ -18,3 +18,4 @@ class Workspace(Base):
     owner = relationship("User", back_populates="workspaces")
     documents = relationship("Document", back_populates="workspace")
     members = relationship("WorkspaceMember", back_populates="workspace")
+    subscription = relationship("Subscription", back_populates="workspace", uselist=False)
