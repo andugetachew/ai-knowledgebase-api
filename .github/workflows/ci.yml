@@ -35,10 +35,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:perfectionist@localhost:5432/ai_knowledgebase_test_db
       MONGO_URL: mongodb://mongoadmin:mongopassword@localhost:27017
       MONGO_DB_NAME: ai_knowledgebase_mongo
+      REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret-key-not-for-production
       ENVIRONMENT: test
       ANTHROPIC_API_KEY: dummy-key-for-tests
