@@ -96,7 +96,6 @@ async def test_upload_without_token_fails(client, workspace_id):
 
 
 async def test_upload_to_another_users_workspace_fails(client, workspace_id):
-    # register a second user
     reg = await client.post(
         "/api/v1/auth/register",
         json={
@@ -113,16 +112,12 @@ async def test_upload_to_another_users_workspace_fails(client, workspace_id):
     intruder_token = login.json()["access_token"]
     intruder_headers = {"Authorization": f"Bearer {intruder_token}"}
 
-    # try to upload to first user's workspace
     response = await client.post(
         f"/api/v1/documents/?workspace_id={workspace_id}",
         files={"file": pdf_file()},
         headers=intruder_headers,
     )
-    assert response.status_code == 404
-
-
-# ── list tests ────────────────────────────────────────────────────────────────
+    assert response.status_code == 403
 
 async def test_list_documents_empty(client, workspace_id, auth_headers):
     response = await client.get(

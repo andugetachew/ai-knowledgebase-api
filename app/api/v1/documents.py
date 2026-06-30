@@ -1,17 +1,18 @@
 import uuid
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlalchemy import select
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_workspace_access
 from app.db.postgres import get_db
 from app.models.sql.document import Document, DocumentStatus
 from app.models.sql.user import User
-from app.models.sql.workspace import Workspace
+from app.models.sql.workspace_member import MemberRole
 from app.schemas.document import DocumentOut, DocumentList
 from app.services.document_processor import extract_text, extract_text_from_url
 from app.workers.tasks import process_document
+from sqlalchemy import select
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -24,11 +25,30 @@ ALLOWED_TYPES = {
     "application/msword",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_EXTRACTED_TEXT_LENGTH = 2_000_000  # ~2M characters
 
 
 class URLIngestRequest(BaseModel):
     url: str
     workspace_id: uuid.UUID
+
+
+async def _dispatch_processing(document: Document, db: AsyncSession, content: str, version: int):
+    """Dispatch to Celery, marking the document failed if the broker is unreachable."""
+    try:
+        process_document.delay(
+            document_id=str(document.id),
+            workspace_id=str(document.workspace_id),
+            content=content,
+            version=version,
+        )
+    except OperationalError:
+        document.status = DocumentStatus.failed
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Document processing is temporarily unavailable. Please try again shortly.",
+        )
 
 
 @router.post("/", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -38,14 +58,7 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await get_workspace_access(workspace_id, current_user, db, min_role=MemberRole.editor)
 
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
@@ -59,7 +72,9 @@ async def upload_document(
     except Exception:
         text = contents.decode("utf-8", errors="ignore")
 
-    # check for existing document with same filename → versioning
+    if len(text) > MAX_EXTRACTED_TEXT_LENGTH:
+        text = text[:MAX_EXTRACTED_TEXT_LENGTH]
+
     existing_result = await db.execute(
         select(Document).where(
             Document.workspace_id == workspace_id,
@@ -87,12 +102,7 @@ async def upload_document(
     await db.commit()
     await db.refresh(document)
 
-    process_document.delay(
-        document_id=str(document.id),
-        workspace_id=str(workspace_id),
-        content=text,
-        version=next_version,
-    )
+    await _dispatch_processing(document, db, text, next_version)
 
     return document
 
@@ -103,19 +113,15 @@ async def ingest_url(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == payload.workspace_id,
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await get_workspace_access(payload.workspace_id, current_user, db, min_role=MemberRole.editor)
 
     try:
         text = await extract_text_from_url(payload.url)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch URL: {str(e)}")
+
+    if len(text) > MAX_EXTRACTED_TEXT_LENGTH:
+        text = text[:MAX_EXTRACTED_TEXT_LENGTH]
 
     existing_result = await db.execute(
         select(Document).where(
@@ -140,12 +146,7 @@ async def ingest_url(
     await db.commit()
     await db.refresh(document)
 
-    process_document.delay(
-        document_id=str(document.id),
-        workspace_id=str(payload.workspace_id),
-        content=text,
-        version=next_version,
-    )
+    await _dispatch_processing(document, db, text, next_version)
 
     return document
 
@@ -156,14 +157,7 @@ async def list_documents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await get_workspace_access(workspace_id, current_user, db, min_role=MemberRole.viewer)
 
     docs = await db.execute(
         select(Document).where(Document.workspace_id == workspace_id)
@@ -186,14 +180,7 @@ async def get_document_versions(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    ws_result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == document.workspace_id,
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not ws_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    await get_workspace_access(document.workspace_id, current_user, db, min_role=MemberRole.viewer)
 
     root_id = document.parent_document_id or document.id
 
@@ -219,14 +206,7 @@ async def delete_document(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    ws_result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == document.workspace_id,
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not ws_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    await get_workspace_access(document.workspace_id, current_user, db, min_role=MemberRole.editor)
 
     await db.delete(document)
     await db.commit()
