@@ -1,7 +1,6 @@
 from datetime import datetime, UTC
 from app.db.redis import get_redis
 
-
 PLAN_LIMITS = {
     "free": 10,
     "pro": 10000,
@@ -11,7 +10,8 @@ PLAN_LIMITS = {
 async def check_rate_limit(workspace_id: str, plan: str) -> dict:
     """
     Returns {"allowed": True/False, "remaining": int, "limit": int}
-    Uses Redis to count queries per day per workspace.
+    Uses an atomic Redis INCR to avoid check-then-act race conditions
+    under concurrent requests.
     """
     redis = get_redis()
     if not redis:
@@ -21,14 +21,14 @@ async def check_rate_limit(workspace_id: str, plan: str) -> dict:
     key = f"rate:{workspace_id}:{today}"
     limit = PLAN_LIMITS.get(plan, 10)
 
-    current = await redis.get(key)
-    count = int(current) if current else 0
-
-    if count >= limit:
-        return {"allowed": False, "remaining": 0, "limit": limit}
-
     new_count = await redis.incr(key)
-    await redis.expire(key, 86400)  # expires in 24 hours
+    if new_count == 1:
+        # only set expiry on first increment of the day to avoid
+        # extending the TTL on every request
+        await redis.expire(key, 86400)
+
+    if new_count > limit:
+        return {"allowed": False, "remaining": 0, "limit": limit}
 
     return {
         "allowed": True,

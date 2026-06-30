@@ -155,7 +155,7 @@ async def test_chat_another_users_workspace_fails(client):
             headers=intruder_headers,
         )
 
-    assert response.status_code == 404
+    assert response.status_code == 403
 
 
 async def test_chat_empty_knowledge_base_returns_answer(client):

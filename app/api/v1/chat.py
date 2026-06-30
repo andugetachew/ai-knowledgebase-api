@@ -1,15 +1,16 @@
 import uuid
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_workspace_access
 from app.db.postgres import get_db
 from app.db.mongodb import get_mongo_db
 from app.models.sql.user import User
 from app.models.sql.workspace import Workspace
+from app.models.sql.workspace_member import MemberRole
 from app.models.nosql.chat_message import ChatMessage
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.retrieval_service import retrieve_relevant_chunks
@@ -25,20 +26,19 @@ async def chat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
+    workspace, _role = await get_workspace_access(
+        uuid.UUID(payload.workspace_id), current_user, db, min_role=MemberRole.viewer
+    )
+
+    # subscription isn't loaded by get_workspace_access, fetch separately
+    sub_result = await db.execute(
         select(Workspace)
-        .where(
-            Workspace.id == uuid.UUID(payload.workspace_id),
-            Workspace.owner_id == current_user.id,
-        )
+        .where(Workspace.id == workspace.id)
         .options(selectinload(Workspace.subscription))
     )
-    workspace = result.scalar_one_or_none()
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    workspace_with_sub = sub_result.scalar_one()
+    plan = workspace_with_sub.subscription.plan if workspace_with_sub.subscription else "free"
 
-    # check rate limit
-    plan = workspace.subscription.plan if workspace.subscription else "free"
     rate = await check_rate_limit(payload.workspace_id, plan)
     if not rate["allowed"]:
         raise HTTPException(
@@ -95,14 +95,7 @@ async def list_conversations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == uuid.UUID(workspace_id),
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await get_workspace_access(uuid.UUID(workspace_id), current_user, db, min_role=MemberRole.viewer)
 
     mongo_db = get_mongo_db()
     pipeline = [
@@ -138,14 +131,7 @@ async def get_conversation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Workspace).where(
-            Workspace.id == uuid.UUID(workspace_id),
-            Workspace.owner_id == current_user.id,
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await get_workspace_access(uuid.UUID(workspace_id), current_user, db, min_role=MemberRole.viewer)
 
     mongo_db = get_mongo_db()
     cursor = mongo_db["chat_messages"].find(
