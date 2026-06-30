@@ -1,6 +1,5 @@
 import io
 import csv
-from pathlib import Path
 
 
 def extract_text_from_pdf(content: bytes) -> str:
