@@ -1,7 +1,7 @@
 # AI Knowledge Base API
 
 > Production-grade intelligent document Q&A SaaS API built with FastAPI, PostgreSQL, MongoDB, Redis, and Claude AI
-
+[![Run in Postman](https://run.pstmn.io/button.svg)](https://github.com/andugetachew/ai-knowledgebase-api/blob/main/postman_collection.json)
 [![CI](https://github.com/andugetachew/ai-knowledgebase-api/actions/workflows/ci.yml/badge.svg)](https://github.com/andugetachew/ai-knowledgebase-api/actions)
 
 **Live URLs:**
@@ -26,6 +26,14 @@
 - Background document processing with Celery
 - Prometheus metrics at /metrics
 - 176 passing tests, 93% coverage on app code
+## Screenshots
+
+### API Documentation (Swagger UI)
+![Swagger UI](docs/swagger1.png)
+![Swagger UI](docs/swagger2.png)
+![API Status](docs/api_status.png)
+### Health Check
+![Health Check](docs/health.png)
 
 ---
 

@@ -1,0 +1,792 @@
+{
+  "info": {
+    "name": "AI Knowledge Base API",
+    "description": "Production-grade intelligent document Q&A SaaS API. Import this collection, set the `base_url` and `token` variables, and you can test every endpoint immediately.\n\n**Quick start:**\n1. Run `POST /auth/register` to create an account\n2. Copy the `access_token` from the response into the `token` collection variable\n3. Copy `workspace_id` into the `workspace_id` collection variable\n4. Upload a document, then ask questions about it\n\n**Live API:** https://ai-knowledgebase-api-m9ry.onrender.com\n**Docs:** https://ai-knowledgebase-api-m9ry.onrender.com/docs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://ai-knowledgebase-api-m9ry.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "Paste your JWT access_token here after login"
+    },
+    {
+      "key": "workspace_id",
+      "value": "",
+      "type": "string",
+      "description": "Paste your workspace_id here after register"
+    },
+    {
+      "key": "document_id",
+      "value": "",
+      "type": "string",
+      "description": "Paste a document_id here after uploading"
+    },
+    {
+      "key": "conversation_id",
+      "value": "",
+      "type": "string",
+      "description": "Filled automatically from chat response"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('token', json.access_token);",
+                  "    pm.collectionVariables.set('workspace_id', json.workspace_id);",
+                  "    console.log('Token and workspace_id saved automatically');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"strongpassword123\",\n  \"full_name\": \"Test User\",\n  \"workspace_name\": \"My Knowledge Base\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "description": "Register a new user. Automatically creates a workspace and free-tier subscription. The test script saves `token` and `workspace_id` to collection variables automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('token', json.access_token);",
+                  "    console.log('Token saved automatically');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"strongpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Login and receive a JWT token. The test script saves the token to collection variables automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Upload Document (TXT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('document_id', json.id);",
+                  "    console.log('document_id saved:', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a TXT, PDF, DOCX, or CSV file"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/?workspace_id={{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", ""],
+              "query": [
+                {"key": "workspace_id", "value": "{{workspace_id}}"}
+              ]
+            },
+            "description": "Upload a document for processing. Supported types: PDF, TXT, MD, CSV, DOCX. Max 10MB. Processing is async — status starts as `pending` and moves to `completed` or `failed`. Re-upload same filename to create a new version."
+          },
+          "response": []
+        },
+        {
+          "name": "Ingest URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('document_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://en.wikipedia.org/wiki/FastAPI\",\n  \"workspace_id\": \"{{workspace_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/ingest-url",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", "ingest-url"]
+            },
+            "description": "Ingest a web page as a document. Fetches URL, strips HTML tags, and processes as plain text."
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/?workspace_id={{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", ""],
+              "query": [
+                {"key": "workspace_id", "value": "{{workspace_id}}"}
+              ]
+            },
+            "description": "List all documents in the workspace. Shows filename, status, version, and chunk count."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document Versions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/{{document_id}}/versions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", "{{document_id}}", "versions"]
+            },
+            "description": "Get all versions of a document sorted oldest to newest. Upload the same filename multiple times to see versioning in action."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/documents/{{document_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "documents", "{{document_id}}"]
+            },
+            "description": "Delete a document. Returns 204 No Content on success."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Ask Question",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('conversation_id', json.conversation_id);",
+                  "    console.log('conversation_id saved:', json.conversation_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What are the main topics covered in the uploaded documents?\",\n  \"workspace_id\": \"{{workspace_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", ""]
+            },
+            "description": "Ask a question against the knowledge base. Returns an AI-generated answer with source document references and token usage. The conversation_id is saved automatically for follow-up questions."
+          },
+          "response": []
+        },
+        {
+          "name": "Ask Follow-up Question",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Can you elaborate on the first point?\",\n  \"workspace_id\": \"{{workspace_id}}\",\n  \"conversation_id\": \"{{conversation_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", ""]
+            },
+            "description": "Continue a conversation by passing the conversation_id. The API automatically includes the last 3 turns of history as context for Claude."
+          },
+          "response": []
+        },
+        {
+          "name": "List Conversations",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/conversations/{{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "conversations", "{{workspace_id}}"]
+            },
+            "description": "List all conversation threads in the workspace sorted by most recent activity. Returns up to 20 conversations."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation History",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/chat/conversations/{{workspace_id}}/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "chat", "conversations", "{{workspace_id}}", "{{conversation_id}}"]
+            },
+            "description": "Get full message history for a specific conversation, sorted oldest to newest."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Semantic Search",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"machine learning algorithms\",\n  \"workspace_id\": \"{{workspace_id}}\",\n  \"top_k\": 5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", ""]
+            },
+            "description": "Semantic search using cosine similarity against document embeddings. Results are cached in Redis for 5 minutes. Increase top_k up to 20 for broader results."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Workspaces",
+      "item": [
+        {
+          "name": "List My Workspaces",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workspaces/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workspaces", ""]
+            },
+            "description": "List all workspaces the current user owns or is a member of."
+          },
+          "response": []
+        },
+        {
+          "name": "List Members",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workspaces/{{workspace_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workspaces", "{{workspace_id}}", "members"]
+            },
+            "description": "List all members with their roles (viewer/editor/owner)."
+          },
+          "response": []
+        },
+        {
+          "name": "Invite Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"colleague@example.com\",\n  \"role\": \"editor\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workspaces/{{workspace_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workspaces", "{{workspace_id}}", "members"]
+            },
+            "description": "Invite a registered user by email. Role can be `viewer` (read-only), `editor` (upload + chat), or `owner` (full control). Requires owner or editor role."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Member Role",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"viewer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workspaces/{{workspace_id}}/members/:user_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workspaces", "{{workspace_id}}", "members", ":user_id"],
+              "variable": [
+                {"key": "user_id", "value": "", "description": "UUID of the member to update"}
+              ]
+            },
+            "description": "Change a member's role. Owner only."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workspaces/{{workspace_id}}/members/:user_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workspaces", "{{workspace_id}}", "members", ":user_id"],
+              "variable": [
+                {"key": "user_id", "value": "", "description": "UUID of the member to remove"}
+              ]
+            },
+            "description": "Remove a member. Owner can remove anyone. Members can remove themselves."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Subscription",
+      "item": [
+        {
+          "name": "Get Subscription",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/subscription/{{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "subscription", "{{workspace_id}}"]
+            },
+            "description": "Get current plan, daily usage, and remaining quota."
+          },
+          "response": []
+        },
+        {
+          "name": "Upgrade Plan",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"pro\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/subscription/{{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "subscription", "{{workspace_id}}"]
+            },
+            "description": "Upgrade to pro (10,000 queries/day) or downgrade to free (10 queries/day). Owner only."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Queries Over Time",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/analytics/{{workspace_id}}/queries-over-time?period=7d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "analytics", "{{workspace_id}}", "queries-over-time"],
+              "query": [
+                {"key": "period", "value": "7d", "description": "e.g. 7d, 30d, 24h, 48h"}
+              ]
+            },
+            "description": "Time-series query counts grouped by day (for periods >2d) or hour (for periods ≤2d)."
+          },
+          "response": []
+        },
+        {
+          "name": "Top Documents",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/analytics/{{workspace_id}}/top-documents?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "analytics", "{{workspace_id}}", "top-documents"],
+              "query": [
+                {"key": "limit", "value": "10"}
+              ]
+            },
+            "description": "Most frequently referenced documents across all chat queries."
+          },
+          "response": []
+        },
+        {
+          "name": "Performance Metrics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/analytics/{{workspace_id}}/performance?period=7d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "analytics", "{{workspace_id}}", "performance"],
+              "query": [
+                {"key": "period", "value": "7d"}
+              ]
+            },
+            "description": "Total queries, average tokens per query, and total tokens used."
+          },
+          "response": []
+        },
+        {
+          "name": "Live Activity",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/analytics/{{workspace_id}}/live",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "analytics", "{{workspace_id}}", "live"]
+            },
+            "description": "Current live query counters from Redis."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Usage",
+      "item": [
+        {
+          "name": "Workspace Stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/{{workspace_id}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "usage", "{{workspace_id}}", "stats"]
+            },
+            "description": "Total queries, total tokens, document count, and queries today."
+          },
+          "response": []
+        },
+        {
+          "name": "Query History",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/{{workspace_id}}/history?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "usage", "{{workspace_id}}", "history"],
+              "query": [
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Paginated history of all questions asked in the workspace."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "dashboard"]
+            },
+            "description": "Platform-wide stats: total users, workspaces, documents, queries, plan breakdown, and token trends."
+          },
+          "response": []
+        },
+        {
+          "name": "List All Workspaces",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/workspaces",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "workspaces"]
+            },
+            "description": "Admin view of all workspaces with activity metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "List All Users",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "users"]
+            },
+            "description": "Admin view of all registered users."
+          },
+          "response": []
+        },
+        {
+          "name": "Token Trends",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/stats/tokens?days=7",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "stats", "tokens"],
+              "query": [
+                {"key": "days", "value": "7"}
+              ]
+            },
+            "description": "Token usage trends over N days across the entire platform."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health & Monitoring",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns connection status for PostgreSQL, MongoDB, and Redis."
+          },
+          "response": []
+        },
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "Returns API name and environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["metrics"]
+            },
+            "description": "Prometheus metrics endpoint. Returns http_requests_total, http_request_duration_seconds, process memory/CPU metrics."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
