@@ -25,7 +25,7 @@
 - Admin dashboard API — platform-wide stats, token trends, workspace activity
 - Background document processing with Celery
 - Prometheus metrics at /metrics
-- 121 passing tests across all modules
+- 176 passing tests, 93% coverage on app code
 
 ---
 
