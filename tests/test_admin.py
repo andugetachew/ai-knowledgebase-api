@@ -131,3 +131,33 @@ async def test_admin_free_plan_count_increases_on_register(client):
     response = await client.get("/api/v1/admin/dashboard", headers=headers)
     assert response.status_code == 200
     assert response.json()["stats"]["free_plan_workspaces"] >= 1
+
+from datetime import datetime, UTC
+from app.db.mongodb import get_mongo_db
+
+
+async def test_admin_dashboard_top_workspaces_populated(client):
+    token, workspace_id = await register_and_login(client, "admin10@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    mongo_db = get_mongo_db()
+
+    await mongo_db["chat_messages"].delete_many({})
+
+    await mongo_db["chat_messages"].insert_many([
+        {"workspace_id": workspace_id, "created_at": datetime.now(UTC), "tokens_used": 50},
+        {"workspace_id": workspace_id, "created_at": datetime.now(UTC), "tokens_used": 75},
+    ])
+
+    response = await client.get("/api/v1/admin/dashboard", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+
+    top = [w for w in data["top_workspaces"] if w["workspace_id"] == workspace_id]
+    assert len(top) == 1
+    assert top[0]["total_queries"] == 2
+    assert top[0]["total_tokens"] == 125
+    assert top[0]["total_documents"] == 0
+    assert top[0]["plan"] == "free"
+
+    await mongo_db["chat_messages"].delete_many({"workspace_id": workspace_id})

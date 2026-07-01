@@ -1,9 +1,7 @@
 import io
 from unittest.mock import AsyncMock, patch
 
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
+from app.services.llm_service import LLMServiceError
 async def register_and_login(client, email: str) -> tuple[str, str]:
     reg = await client.post(
         "/api/v1/auth/register",
@@ -205,3 +203,95 @@ async def test_chat_saves_message_to_mongo(client):
     assert saved is not None
     assert saved["question"] == "Test question"
     assert saved["answer"] == MOCK_LLM_RESPONSE["answer"]
+
+async def test_chat_returns_502_when_llm_service_fails(client):
+    token, workspace_id = await register_and_login(client, "chat_llm_fail@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch(
+        "app.api.v1.chat.generate_answer",
+        new_callable=AsyncMock,
+        side_effect=LLMServiceError("The AI service is temporarily unavailable. Please try again shortly."),
+    ):
+        response = await client.post(
+            "/api/v1/chat/",
+            json={"question": "Any question", "workspace_id": workspace_id},
+            headers=headers,
+        )
+
+    assert response.status_code == 502
+
+
+async def test_list_conversations(client):
+    token, workspace_id = await register_and_login(client, "chat9@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch("app.api.v1.chat.generate_answer", new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = MOCK_LLM_RESPONSE
+        await client.post(
+            "/api/v1/chat/",
+            json={"question": "First question", "workspace_id": workspace_id},
+            headers=headers,
+        )
+
+    response = await client.get(
+        f"/api/v1/chat/conversations/{workspace_id}", headers=headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["last_question"] == "First question"
+    assert data[0]["message_count"] == 1
+
+
+async def test_get_conversation_messages(client):
+    token, workspace_id = await register_and_login(client, "chat10@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch("app.api.v1.chat.generate_answer", new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = MOCK_LLM_RESPONSE
+        first = await client.post(
+            "/api/v1/chat/",
+            json={"question": "First question", "workspace_id": workspace_id},
+            headers=headers,
+        )
+        conversation_id = first.json()["conversation_id"]
+
+        # second message in same conversation exercises the
+        # conversation_history lookup branch
+        await client.post(
+            "/api/v1/chat/",
+            json={
+                "question": "Follow-up question",
+                "workspace_id": workspace_id,
+                "conversation_id": conversation_id,
+            },
+            headers=headers,
+        )
+
+    response = await client.get(
+        f"/api/v1/chat/conversations/{workspace_id}/{conversation_id}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    messages = response.json()
+    assert len(messages) == 2
+    assert messages[0]["question"] == "First question"
+    assert messages[1]["question"] == "Follow-up question"
+
+
+async def test_chat_rate_limit_exceeded(client):
+    token, workspace_id = await register_and_login(client, "chat11@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch("app.api.v1.chat.check_rate_limit", new_callable=AsyncMock) as mock_rate:
+        mock_rate.return_value = {"allowed": False, "limit": 50}
+
+        response = await client.post(
+            "/api/v1/chat/",
+            json={"question": "Any question", "workspace_id": workspace_id},
+            headers=headers,
+        )
+
+    assert response.status_code == 429
+    assert "limit reached" in response.json()["detail"].lower()

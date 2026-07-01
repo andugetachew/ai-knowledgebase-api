@@ -145,3 +145,34 @@ async def test_live_activity_without_token_fails(client):
         f"/api/v1/analytics/{workspace_id}/live"
     )
     assert response.status_code == 401
+
+
+from datetime import datetime, UTC
+from app.db.mongodb import get_mongo_db
+
+async def test_performance_metrics_with_data(client):
+    token, workspace_id = await register_and_login(client, "analytics12@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    mongo_db = get_mongo_db()
+    await mongo_db["chat_messages"].insert_many([
+        {"workspace_id": workspace_id, "created_at": datetime.now(UTC), "tokens_used": 100, "sources": ["doc1"]},
+        {"workspace_id": workspace_id, "created_at": datetime.now(UTC), "tokens_used": 200, "sources": ["doc1", "doc2"]},
+    ])
+
+    response = await client.get(
+        f"/api/v1/analytics/{workspace_id}/performance", headers=headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_queries"] == 2
+    assert data["total_tokens"] == 300
+    assert data["avg_tokens_per_query"] == 150.0
+
+    await mongo_db["chat_messages"].delete_many({"workspace_id": workspace_id})
+
+
+async def test_analytics_stream_without_token_fails(client):
+    _, workspace_id = await register_and_login(client, "analytics14@test.com")
+    response = await client.get(f"/api/v1/analytics/{workspace_id}/stream")
+    assert response.status_code == 401

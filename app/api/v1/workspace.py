@@ -26,6 +26,9 @@ async def get_workspace_or_403(
     db: AsyncSession,
     require_owner: bool = False,
 ) -> Workspace:
+    print("!!! get_workspace_or_403 CALLED !!!")
+    print("!!! get_workspace_or_403 CALLED !!!")
+    print("MODULE FILE:", __file__)
     """Get workspace and verify user has access. Raises 404 or 403."""
     result = await db.execute(
         select(Workspace).where(Workspace.id == workspace_id)
@@ -217,3 +220,4 @@ async def remove_member(
 
     await db.delete(member)
     await db.commit()
+

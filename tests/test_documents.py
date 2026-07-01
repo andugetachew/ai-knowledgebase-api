@@ -193,3 +193,116 @@ async def test_delete_without_token_fails(client, workspace_id):
     fake_id = "00000000-0000-0000-0000-000000000000"
     response = await client.delete(f"/api/v1/documents/{fake_id}")
     assert response.status_code == 401
+
+from kombu.exceptions import OperationalError
+import app.api.v1.documents as documents_module
+
+
+def huge_file(name: str = "huge.pdf") -> tuple:
+    content = b"x" * (10 * 1024 * 1024 + 1)  # over MAX_FILE_SIZE
+    return (name, io.BytesIO(content), "application/pdf")
+
+
+async def test_upload_file_too_large(client, workspace_id, auth_headers):
+    response = await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": huge_file()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+
+async def test_upload_broker_unavailable(client, workspace_id, auth_headers, monkeypatch):
+    def raise_broker_error(**kwargs):
+        raise OperationalError("broker down")
+
+    monkeypatch.setattr(documents_module.process_document, "delay", raise_broker_error)
+
+    response = await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": pdf_file()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 503
+
+
+async def test_reupload_creates_new_version(client, workspace_id, auth_headers):
+    first = await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": pdf_file()},
+        headers=auth_headers,
+    )
+    assert first.json()["version"] == 1
+
+    second = await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": pdf_file()},
+        headers=auth_headers,
+    )
+    assert second.status_code == 201
+    assert second.json()["version"] == 2
+    assert second.json()["parent_document_id"] is not None
+
+
+async def test_get_document_versions(client, workspace_id, auth_headers):
+    first = await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": pdf_file()},
+        headers=auth_headers,
+    )
+    document_id = first.json()["id"]
+
+    await client.post(
+        f"/api/v1/documents/?workspace_id={workspace_id}",
+        files={"file": pdf_file()},
+        headers=auth_headers,
+    )
+
+    response = await client.get(f"/api/v1/documents/{document_id}/versions", headers=auth_headers)
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+async def test_get_document_versions_not_found(client, auth_headers):
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.get(f"/api/v1/documents/{fake_id}/versions", headers=auth_headers)
+    assert response.status_code == 404
+
+
+async def test_ingest_url_success(client, workspace_id, auth_headers, monkeypatch):
+    async def fake_extract(url):
+        return "extracted content from url"
+
+    monkeypatch.setattr(documents_module, "extract_text_from_url", fake_extract)
+
+    response = await client.post(
+        "/api/v1/documents/ingest-url",
+        json={"url": "https://example.com/article", "workspace_id": workspace_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["filename"] == "https://example.com/article"
+    assert data["file_type"] == "text/html"
+
+
+async def test_ingest_url_fetch_failure(client, workspace_id, auth_headers, monkeypatch):
+    async def fake_extract(url):
+        raise ValueError("connection refused")
+
+    monkeypatch.setattr(documents_module, "extract_text_from_url", fake_extract)
+
+    response = await client.post(
+        "/api/v1/documents/ingest-url",
+        json={"url": "https://bad-url.example", "workspace_id": workspace_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+
+async def test_ingest_url_without_token_fails(client, workspace_id):
+    response = await client.post(
+        "/api/v1/documents/ingest-url",
+        json={"url": "https://example.com", "workspace_id": workspace_id},
+    )
+    assert response.status_code == 401

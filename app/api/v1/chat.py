@@ -14,7 +14,7 @@ from app.models.sql.workspace_member import MemberRole
 from app.models.nosql.chat_message import ChatMessage
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.retrieval_service import retrieve_relevant_chunks
-from app.services.llm_service import generate_answer
+from app.services.llm_service import generate_answer, LLMServiceError
 from app.services.rate_limiter import check_rate_limit
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -30,7 +30,6 @@ async def chat(
         uuid.UUID(payload.workspace_id), current_user, db, min_role=MemberRole.viewer
     )
 
-    # subscription isn't loaded by get_workspace_access, fetch separately
     sub_result = await db.execute(
         select(Workspace)
         .where(Workspace.id == workspace.id)
@@ -64,11 +63,14 @@ async def chat(
         db=mongo_db,
     )
 
-    result_data = await generate_answer(
-        question=payload.question,
-        context_chunks=chunks,
-        conversation_history=conversation_history,
-    )
+    try:
+        result_data = await generate_answer(
+            question=payload.question,
+            context_chunks=chunks,
+            conversation_history=conversation_history,
+        )
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     message = ChatMessage(
         conversation_id=conversation_id,

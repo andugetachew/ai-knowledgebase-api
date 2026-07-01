@@ -377,3 +377,86 @@ async def test_member_can_see_workspace_in_list(client):
     assert response.status_code == 200
     workspace_ids = [w["id"] for w in response.json()]
     assert workspace_id in workspace_ids
+
+
+async def test_list_members_workspace_not_found(client):
+    token, _ = await register_and_login(client, "ws16@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_id = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.get(f"/api/v1/workspaces/{fake_id}/members", headers=headers)
+    assert response.status_code == 404
+
+
+async def test_list_members_non_member_forbidden(client):
+    _, workspace_id = await register_and_login(client, "ws17@test.com")
+    outsider_token, _ = await register_and_login(client, "ws17b@test.com")
+    outsider_headers = {"Authorization": f"Bearer {outsider_token}"}
+
+    response = await client.get(
+        f"/api/v1/workspaces/{workspace_id}/members", headers=outsider_headers
+    )
+    assert response.status_code == 403
+
+
+async def test_invite_member_workspace_not_found(client):
+    token, _ = await register_and_login(client, "ws18@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_id = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.post(
+        f"/api/v1/workspaces/{fake_id}/members",
+        json={"email": "anyone@test.com", "role": "viewer"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+async def test_update_role_workspace_not_found(client):
+    token, _ = await register_and_login(client, "ws19@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_ws = "00000000-0000-0000-0000-000000000000"
+    fake_user = "11111111-1111-1111-1111-111111111111"
+
+    response = await client.patch(
+        f"/api/v1/workspaces/{fake_ws}/members/{fake_user}",
+        json={"role": "editor"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+async def test_update_role_member_not_found(client):
+    token, workspace_id = await register_and_login(client, "ws20@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_user = "11111111-1111-1111-1111-111111111111"
+
+    response = await client.patch(
+        f"/api/v1/workspaces/{workspace_id}/members/{fake_user}",
+        json={"role": "editor"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+async def test_remove_member_workspace_not_found(client):
+    token, _ = await register_and_login(client, "ws21@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_ws = "00000000-0000-0000-0000-000000000000"
+    fake_user = "11111111-1111-1111-1111-111111111111"
+
+    response = await client.delete(
+        f"/api/v1/workspaces/{fake_ws}/members/{fake_user}", headers=headers
+    )
+    assert response.status_code == 404
+
+
+async def test_remove_member_not_found(client):
+    token, workspace_id = await register_and_login(client, "ws22@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    fake_user = "11111111-1111-1111-1111-111111111111"
+
+    response = await client.delete(
+        f"/api/v1/workspaces/{workspace_id}/members/{fake_user}", headers=headers
+    )
+    assert response.status_code == 404
