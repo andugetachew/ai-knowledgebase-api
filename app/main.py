@@ -17,7 +17,8 @@ from app.core.config import settings
 from app.db.mongodb import close_mongo_connection, connect_to_mongo, check_mongo_connection
 from app.db.postgres import engine
 from app.db.redis import connect_to_redis, close_redis_connection, check_redis_connection
-
+from app.api.v1.checkout import router as checkout_router
+from app.api.v1.stripe_webhook import router as webhook_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,7 +45,8 @@ app.include_router(analytics_router)
 app.include_router(workspace_router)
 app.include_router(subscription_router)
 app.include_router(admin_router)
-
+app.include_router(checkout_router)
+app.include_router(webhook_router)
 
 @app.get("/")
 async def root():
