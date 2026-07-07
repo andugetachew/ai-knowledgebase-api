@@ -55,6 +55,17 @@ async def setup_redis():
     await connect_to_redis()
     yield
     await close_redis_connection()
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_mongo():
+    from app.db.mongodb import get_mongo_db
+    yield
+    try:
+        mongo_db = get_mongo_db()
+        if mongo_db is not None:
+            await mongo_db["chat_messages"].delete_many({})
+            await mongo_db["chunks"].delete_many({})
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture

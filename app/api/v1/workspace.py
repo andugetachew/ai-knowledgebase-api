@@ -16,6 +16,7 @@ from app.schemas.workspace import (
     WorkspaceMemberWithEmail,
     WorkspaceOut,
 )
+from app.services.email_service import send_workspace_invite_email
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
 
@@ -161,8 +162,18 @@ async def invite_member(
     )
     db.add(member)
     await db.commit()
+    try:
+        await send_workspace_invite_email(
+            to=invited_user.email,
+            invited_by=current_user.full_name or current_user.email,
+            workspace_name=workspace.name,
+            role=payload.role,
+        )
+    except Exception:
+        pass  # don't fail the invite if email fails
 
     return {"message": f"{invited_user.email} added as {payload.role}"}
+
 
 
 @router.patch("/{workspace_id}/members/{user_id}")
