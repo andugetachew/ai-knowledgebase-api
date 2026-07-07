@@ -1,11 +1,9 @@
 import uuid
 from datetime import datetime, UTC
 from enum import Enum as PyEnum
-
 from sqlalchemy import ForeignKey, Integer, String, Enum
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.postgres import Base
 
 
@@ -29,6 +27,7 @@ class Document(Base):
     parent_document_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True
     )
+    storage_key: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC))
 
     workspace = relationship("Workspace", back_populates="documents")

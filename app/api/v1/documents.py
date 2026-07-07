@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.api.deps import get_current_user, get_workspace_access
 from app.db.postgres import get_db
@@ -11,8 +12,8 @@ from app.models.sql.user import User
 from app.models.sql.workspace_member import MemberRole
 from app.schemas.document import DocumentOut, DocumentList
 from app.services.document_processor import extract_text, extract_text_from_url
+from app.services.storage_service import upload_file, delete_file, get_presigned_url
 from app.workers.tasks import process_document
-from sqlalchemy import select
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -75,6 +76,18 @@ async def upload_document(
     if len(text) > MAX_EXTRACTED_TEXT_LENGTH:
         text = text[:MAX_EXTRACTED_TEXT_LENGTH]
 
+    # store original file in S3-compatible storage
+    storage_key = None
+    try:
+        storage_key = await upload_file(
+            file_bytes=contents,
+            filename=file.filename,
+            content_type=file.content_type,
+            workspace_id=str(workspace_id),
+        )
+    except Exception:
+        pass  # storage failure is non-fatal
+
     existing_result = await db.execute(
         select(Document).where(
             Document.workspace_id == workspace_id,
@@ -97,6 +110,7 @@ async def upload_document(
         status=DocumentStatus.pending,
         version=next_version,
         parent_document_id=parent_id,
+        storage_key=storage_key,
     )
     db.add(document)
     await db.commit()
@@ -141,6 +155,7 @@ async def ingest_url(
         status=DocumentStatus.pending,
         version=next_version,
         parent_document_id=parent_id,
+        storage_key=None,  # URLs don't have a stored file
     )
     db.add(document)
     await db.commit()
@@ -164,6 +179,32 @@ async def list_documents(
     )
     documents = docs.scalars().all()
     return DocumentList(total=len(documents), documents=documents)
+
+
+@router.get("/{document_id}/download-url")
+async def get_download_url(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a presigned URL to download the original file. Valid for 1 hour."""
+    result = await db.execute(
+        select(Document).where(Document.id == document_id)
+    )
+    document = result.scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    await get_workspace_access(document.workspace_id, current_user, db, min_role=MemberRole.viewer)
+
+    if not document.storage_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No stored file found for this document.",
+        )
+
+    url = get_presigned_url(document.storage_key)
+    return {"download_url": url, "expires_in": 3600}
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentOut])
@@ -207,6 +248,12 @@ async def delete_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     await get_workspace_access(document.workspace_id, current_user, db, min_role=MemberRole.editor)
+
+    if document.storage_key:
+        try:
+            await delete_file(document.storage_key)
+        except Exception:
+            pass  # don't fail delete if storage cleanup fails
 
     await db.delete(document)
     await db.commit()

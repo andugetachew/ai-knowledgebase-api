@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     default_from_email: str = "AI Knowledge Base <noreply@example.com>"
     frontend_url: str = "http://localhost:3000"
 
+    # S3 / Object Storage
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_bucket: str = "ai-knowledgebase-docs"
+    s3_region: str = "us-east-1"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
