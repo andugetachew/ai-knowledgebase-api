@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.auth import router as auth_router
@@ -13,12 +16,26 @@ from app.api.v1.analytics import router as analytics_router
 from app.api.v1.workspace import router as workspace_router
 from app.api.v1.subscription import router as subscription_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.checkout import router as checkout_router
+from app.api.v1.stripe_webhook import router as webhook_router
 from app.core.config import settings
 from app.db.mongodb import close_mongo_connection, connect_to_mongo, check_mongo_connection
 from app.db.postgres import engine
 from app.db.redis import connect_to_redis, close_redis_connection, check_redis_connection
-from app.api.v1.checkout import router as checkout_router
-from app.api.v1.stripe_webhook import router as webhook_router
+
+# Initialize Sentry before app creation
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        integrations=[
+            FastApiIntegration(),
+            SqlalchemyIntegration(),
+        ],
+        traces_sample_rate=0.2,
+        send_default_pii=False,
+        environment=settings.environment,
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,6 +64,7 @@ app.include_router(subscription_router)
 app.include_router(admin_router)
 app.include_router(checkout_router)
 app.include_router(webhook_router)
+
 
 @app.get("/")
 async def root():

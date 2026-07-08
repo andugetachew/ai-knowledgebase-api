@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Sentry
+    sentry_dsn: str = ""
 
 
 settings = Settings()
