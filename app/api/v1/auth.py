@@ -1,4 +1,5 @@
 import secrets
+import json
 from datetime import datetime, UTC, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.postgres import get_db
+from app.db.redis import get_redis
 from app.models.sql.user import User
 from app.models.sql.workspace import Workspace
 from app.models.sql.subscription import Subscription, PlanType
@@ -16,9 +18,7 @@ from app.services.email_service import send_password_reset_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
-# In-memory token store — fine for dev/portfolio
-# Production would use Redis with TTL
-_reset_tokens: dict[str, dict] = {}
+RESET_TOKEN_TTL = 3600  # 1 hour in seconds
 
 
 class PasswordResetRequest(BaseModel):
@@ -89,15 +89,22 @@ async def forgot_password(
 
     if user:
         token = secrets.token_urlsafe(32)
-        _reset_tokens[token] = {
-            "user_id": str(user.id),
-            "email": user.email,
-            "expires_at": datetime.now(UTC) + timedelta(hours=1),
-        }
+        redis = get_redis()
+
+        if redis:
+            token_data = json.dumps({
+                "user_id": str(user.id),
+                "email": user.email,
+            })
+            await redis.setex(
+                f"reset_token:{token}",
+                RESET_TOKEN_TTL,
+                token_data,
+            )
+
         try:
             await send_password_reset_email(user.email, token)
         except Exception:
-            # Don't leak email errors to client
             pass
 
     return {"message": "If that email exists, a reset link has been sent."}
@@ -109,19 +116,20 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Confirm password reset using token from email."""
-    token_data = _reset_tokens.get(payload.token)
+    redis = get_redis()
 
-    if not token_data:
+    if not redis:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Password reset is temporarily unavailable.",
+        )
+
+    token_data_raw = await redis.get(f"reset_token:{payload.token}")
+
+    if not token_data_raw:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token.",
-        )
-
-    if datetime.now(UTC) > token_data["expires_at"]:
-        _reset_tokens.pop(payload.token, None)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token has expired. Please request a new one.",
         )
 
     if len(payload.new_password) < 8:
@@ -129,6 +137,8 @@ async def reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters.",
         )
+
+    token_data = json.loads(token_data_raw)
 
     result = await db.execute(
         select(User).where(User.id == token_data["user_id"])
@@ -143,7 +153,7 @@ async def reset_password(
     user.hashed_password = hash_password(payload.new_password)
     await db.commit()
 
-    # Invalidate token after use
-    _reset_tokens.pop(payload.token, None)
+    # invalidate token after use — one-time use
+    await redis.delete(f"reset_token:{payload.token}")
 
     return {"message": "Password reset successfully. You can now log in."}

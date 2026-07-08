@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import patch, AsyncMock
+import json
+from unittest.mock import patch, AsyncMock, MagicMock
 
 
 async def register_and_login(client, email: str) -> tuple[str, str]:
@@ -27,10 +28,7 @@ async def register_and_login(client, email: str) -> tuple[str, str]:
 async def test_forgot_password_returns_200_for_existing_email(client):
     await register_and_login(client, "reset1@test.com")
 
-    with patch(
-        "app.api.v1.auth.send_password_reset_email",
-        new_callable=AsyncMock,
-    ):
+    with patch("app.api.v1.auth.send_password_reset_email", new_callable=AsyncMock):
         response = await client.post(
             "/api/v1/auth/forgot-password",
             json={"email": "reset1@test.com"},
@@ -41,7 +39,6 @@ async def test_forgot_password_returns_200_for_existing_email(client):
 
 
 async def test_forgot_password_returns_200_for_nonexistent_email(client):
-    """Should return 200 even for unknown email to prevent user enumeration."""
     response = await client.post(
         "/api/v1/auth/forgot-password",
         json={"email": "doesnotexist@test.com"},
@@ -62,32 +59,25 @@ async def test_forgot_password_sends_email(client):
             json={"email": "reset2@test.com"},
         )
         mock_send.assert_called_once()
-        call_args = mock_send.call_args
-        assert call_args[0][0] == "reset2@test.com"
+        assert mock_send.call_args[0][0] == "reset2@test.com"
 
 
 async def test_reset_password_with_valid_token(client):
     await register_and_login(client, "reset3@test.com")
 
-    from app.api.v1.auth import _reset_tokens
-    from datetime import datetime, UTC, timedelta
-    import uuid
-
-    token = "valid_test_token_123"
-    _reset_tokens[token] = {
-        "user_id": str(uuid.uuid4()),
-        "email": "reset3@test.com",
-        "expires_at": datetime.now(UTC) + timedelta(hours=1),
-    }
-
-    # get real user_id
-    result = await client.post(
+    from app.core.security import decode_access_token
+    login = await client.post(
         "/api/v1/auth/login",
         json={"email": "reset3@test.com", "password": "testpassword123"},
     )
-    from app.core.security import decode_access_token
-    user_id = decode_access_token(result.json()["access_token"])
-    _reset_tokens[token]["user_id"] = user_id
+    user_id = decode_access_token(login.json()["access_token"])
+
+    token = "valid_test_token_123"
+    token_data = json.dumps({"user_id": user_id, "email": "reset3@test.com"})
+
+    from app.db.redis import get_redis
+    redis = get_redis()
+    await redis.setex(f"reset_token:{token}", 3600, token_data)
 
     response = await client.post(
         "/api/v1/auth/reset-password",
@@ -96,7 +86,6 @@ async def test_reset_password_with_valid_token(client):
     assert response.status_code == 200
     assert "successfully" in response.json()["message"]
 
-    # verify can login with new password
     login = await client.post(
         "/api/v1/auth/login",
         json={"email": "reset3@test.com", "password": "newpassword456"},
@@ -107,42 +96,37 @@ async def test_reset_password_with_valid_token(client):
 async def test_reset_password_with_invalid_token(client):
     response = await client.post(
         "/api/v1/auth/reset-password",
-        json={"token": "nonexistent_token", "new_password": "newpassword456"},
+        json={"token": "nonexistent_token_xyz", "new_password": "newpassword456"},
     )
     assert response.status_code == 400
 
 
 async def test_reset_password_with_expired_token(client):
-    await register_and_login(client, "reset4@test.com")
-
-    from app.api.v1.auth import _reset_tokens
-    from datetime import datetime, UTC, timedelta
-
-    token = "expired_token_123"
-    _reset_tokens[token] = {
-        "user_id": "some-user-id",
-        "email": "reset4@test.com",
-        "expires_at": datetime.now(UTC) - timedelta(hours=2),
-    }
-
+    """Redis TTL handles expiry — simulate by not setting the key."""
     response = await client.post(
         "/api/v1/auth/reset-password",
-        json={"token": token, "new_password": "newpassword456"},
+        json={"token": "already_expired_token", "new_password": "newpassword456"},
     )
     assert response.status_code == 400
-    assert "expired" in response.json()["detail"].lower()
 
 
 async def test_reset_password_short_password_fails(client):
-    from app.api.v1.auth import _reset_tokens
-    from datetime import datetime, UTC, timedelta
+    from app.core.security import decode_access_token
+    await register_and_login(client, "reset5@test.com")
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "reset5@test.com", "password": "testpassword123"},
+    )
+    user_id = decode_access_token(login.json()["access_token"])
 
-    token = "short_pw_token"
-    _reset_tokens[token] = {
-        "user_id": "some-user-id",
-        "email": "reset5@test.com",
-        "expires_at": datetime.now(UTC) + timedelta(hours=1),
-    }
+    token = "short_pw_token_xyz"
+    from app.db.redis import get_redis
+    redis = get_redis()
+    await redis.setex(
+        f"reset_token:{token}",
+        3600,
+        json.dumps({"user_id": user_id, "email": "reset5@test.com"}),
+    )
 
     response = await client.post(
         "/api/v1/auth/reset-password",
@@ -152,31 +136,31 @@ async def test_reset_password_short_password_fails(client):
 
 
 async def test_token_invalidated_after_use(client):
-    """Token should be deleted after successful reset."""
     await register_and_login(client, "reset6@test.com")
 
-    from app.api.v1.auth import _reset_tokens
-    from datetime import datetime, UTC, timedelta
     from app.core.security import decode_access_token
+    from app.db.redis import get_redis
 
-    token = "one_time_token_456"
-    result = await client.post(
+    login = await client.post(
         "/api/v1/auth/login",
         json={"email": "reset6@test.com", "password": "testpassword123"},
     )
-    user_id = decode_access_token(result.json()["access_token"])
-    _reset_tokens[token] = {
-        "user_id": user_id,
-        "email": "reset6@test.com",
-        "expires_at": datetime.now(UTC) + timedelta(hours=1),
-    }
+    user_id = decode_access_token(login.json()["access_token"])
+
+    token = "one_time_token_456"
+    redis = get_redis()
+    await redis.setex(
+        f"reset_token:{token}",
+        3600,
+        json.dumps({"user_id": user_id, "email": "reset6@test.com"}),
+    )
 
     await client.post(
         "/api/v1/auth/reset-password",
         json={"token": token, "new_password": "newpassword789"},
     )
 
-    # second use of same token should fail
+    # second use should fail
     response = await client.post(
         "/api/v1/auth/reset-password",
         json={"token": token, "new_password": "anotherpassword"},
@@ -203,13 +187,11 @@ async def test_invite_sends_email(client):
 
     assert response.status_code == 201
     mock_send.assert_called_once()
-    call_kwargs = mock_send.call_args
-    assert call_kwargs[1]["to"] == "invite_receiver@test.com"
-    assert call_kwargs[1]["role"] == "editor"
+    assert mock_send.call_args[1]["to"] == "invite_receiver@test.com"
+    assert mock_send.call_args[1]["role"] == "editor"
 
 
 async def test_invite_succeeds_even_if_email_fails(client):
-    """Email failure should not prevent the invite from being created."""
     token, workspace_id = await register_and_login(client, "invite_sender2@test.com")
     await register_and_login(client, "invite_receiver2@test.com")
     headers = {"Authorization": f"Bearer {token}"}
