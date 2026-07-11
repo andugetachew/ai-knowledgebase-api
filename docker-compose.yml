@@ -1,5 +1,4 @@
 services:
-
   api:
     build:
       context: .
@@ -49,16 +48,18 @@ services:
     image: postgres:16-alpine
     container_name: ai_knowledgebase_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: perfectionist
-      POSTGRES_DB: ai_knowledgebase_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_knowledgebase_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
       - app_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -67,12 +68,12 @@ services:
     image: mongo:7
     container_name: ai_knowledgebase_mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: mongoadmin
-      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-mongoadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongopassword}
     volumes:
       - mongo_data:/data/db
     ports:
-    - "27017:27017"   
+      - "27017:27017"
     networks:
       - app_network
     restart: unless-stopped

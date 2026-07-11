@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 from enum import Enum as PyEnum
-from sqlalchemy import ForeignKey, Integer, Enum, String
+from sqlalchemy import ForeignKey, Integer, Enum, String, Boolean
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.postgres import Base
@@ -10,6 +10,14 @@ from app.db.postgres import Base
 class PlanType(str, PyEnum):
     free = "free"
     pro = "pro"
+
+
+class SubscriptionStatus(str, PyEnum):
+    active = "active"
+    past_due = "past_due"
+    canceled = "canceled"
+    incomplete = "incomplete"
+    trialing = "trialing"
 
 
 class Subscription(Base):
@@ -21,6 +29,11 @@ class Subscription(Base):
     queries_per_day: Mapped[int] = mapped_column(Integer, default=10)
     stripe_customer_id: Mapped[str] = mapped_column(String, nullable=True)
     stripe_subscription_id: Mapped[str] = mapped_column(String, nullable=True)
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        Enum(SubscriptionStatus), default=SubscriptionStatus.active, nullable=False
+    )
+    current_period_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC))
 

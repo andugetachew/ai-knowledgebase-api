@@ -33,9 +33,14 @@ class Settings(BaseSettings):
     s3_bucket: str = "ai-knowledgebase-docs"
     s3_region: str = "us-east-1"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     # Sentry
     sentry_dsn: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()
